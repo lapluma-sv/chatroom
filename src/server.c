@@ -34,42 +34,39 @@ int main(void)
         perror("listen");
         exit(1);
     }
-
-    // 4. 接受连接
-    int client_fd = accept(server_fd, NULL, NULL);
-    if(client_fd < 0) 
+    while(1)
     {
-        perror("accept");
-        exit(1);
-    }
-
-    // 5. 循环接收和发送
-    char buf[1024];
-    while (1) 
-    {
-        int len = recv(client_fd, buf, sizeof(buf), 0);
-        if(len <= 0) 
+        // 4. 接受连接
+        int client_fd = accept(server_fd, NULL, NULL);
+        if(client_fd < 0) 
         {
-            break;
-        }
-        buf[len] = '\0';
-        printf("server receive : %s", buf);
-        if(strcmp(buf, "quit\n") == 0) 
-        {
-            break;
-        }
-        if(send(client_fd, buf, strlen(buf), 0) == -1) 
-        {
-            perror("send");
+            perror("accept");
             exit(1);
         }
-        else
-        {
-            printf("server send : %s", buf);
-        }
-    }
 
-    // 6. 关闭连接
-    close(client_fd);
+        // 5. 循环接收和发送
+        char buf[1024];
+        while (1) 
+        {
+            int len = recv(client_fd, buf, sizeof(buf), 0);
+            if(len <= 0)    
+            {
+                break;
+            }
+            buf[len] = '\0';
+            printf("server receive : %s", buf);
+            if(send(client_fd, buf, strlen(buf), 0) == -1)
+            {
+                perror("send");
+                break;
+            }
+            else
+            {
+                printf("server send : %s", buf);
+            }
+        }
+        // 6. 关闭连接
+        close(client_fd);
+    }
     close(server_fd);
 }

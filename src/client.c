@@ -31,16 +31,16 @@ int main(void)
     char buf[1024];
     while (fgets(buf, sizeof(buf), stdin)) 
     {
+        if(strcmp(buf, "quit\n") == 0) 
+        {
+            break;
+        }
         if(send(fd, buf, strlen(buf), 0) == -1) 
         {
             perror("send");
             exit(1);
         }
         printf("client send : %s", buf);
-        if(strcmp(buf, "quit\n") == 0) 
-        {
-            break;
-        }
         int len = recv(fd, buf, sizeof(buf), 0);
         if(len <= 0) 
         {
