@@ -23,9 +23,11 @@ int main(void)
     addr.sin_port = htons(8888);
     if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) 
     {
+        close(fd);
         perror("connect");
         exit(1);
     }
+    printf("client connect server.\n");
 
     // 3. 循环读取输入并发送
     char buf[1024];
@@ -38,12 +40,18 @@ int main(void)
         if(send(fd, buf, strlen(buf), 0) == -1) 
         {
             perror("send");
-            exit(1);
+            break;
         }
         printf("client send : %s", buf);
-        int len = recv(fd, buf, sizeof(buf), 0);
-        if(len <= 0) 
+        int len = recv(fd, buf, sizeof(buf) - 1, 0);
+        if(len < 0) 
         {
+            perror("recv");
+            break;
+        }
+        else if(len == 0) 
+        {
+            printf("server close.\n");
             break;
         }
         buf[len] = '\0';
@@ -52,4 +60,6 @@ int main(void)
 
     // 4. 关闭连接
     close(fd);
+    printf("client exit.\n");
+    return 0;
 }
