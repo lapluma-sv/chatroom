@@ -5,60 +5,71 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "protocol.h"
 
 int main(void)
 {
-    // 1. 创建 socket
     int fd = socket(AF_INET, SOCK_STREAM, 0);
-    if(fd < 0) 
+    if(fd < 0)
     {
         perror("socket");
         exit(1);
     }
 
-    // 2. 连接服务端
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("127.0.0.1");  // 连接本机
-    addr.sin_port = htons(8888);
-    if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) 
+    struct sockaddr_in addr = {
+        .sin_family = AF_INET,
+        .sin_addr.s_addr = inet_addr("127.0.0.1"),
+        .sin_port = htons(8888)
+    };
+
+    if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
     {
         close(fd);
         perror("connect");
         exit(1);
     }
+
     printf("client connect server.\n");
 
-    // 3. 循环读取输入并发送
-    char buf[1024];
-    while (fgets(buf, sizeof(buf), stdin)) 
+    char buf[PROTOCOL_MAX_BODY_SIZE + 1];
+    while(fgets(buf, sizeof(buf), stdin))
     {
-        if(strcmp(buf, "quit\n") == 0) 
+        // 去掉末尾换行符
+        int len = strlen(buf);
+        if(len > 0 && buf[len - 1] == '\n')
         {
+            buf[len - 1] = '\0';
+            len--;
+        }
+
+        // 判断是否退出
+        if(strcmp(buf, "quit") == 0)
+        {
+            protocol_send_msg(fd, MSG_QUIT, "quit");
             break;
         }
-        if(send(fd, buf, strlen(buf), 0) == -1) 
+
+        // 发送消息
+        if(protocol_send_msg(fd, MSG_TEXT, buf) < 0)
         {
             perror("send");
             break;
         }
-        printf("client send : %s", buf);
-        int len = recv(fd, buf, sizeof(buf) - 1, 0);
-        if(len < 0) 
+
+        // 接收回显
+        uint8_t type;
+        char msg[PROTOCOL_MAX_BODY_SIZE + 1];
+        int ret = protocol_recv_msg(fd, &type, msg, sizeof(msg));
+        if(ret <= 0)
         {
-            perror("recv");
+            if(ret == 0) printf("server close.\n");
+            else perror("recv");
             break;
         }
-        else if(len == 0) 
-        {
-            printf("server close.\n");
-            break;
-        }
-        buf[len] = '\0';
-        printf("Echo: %s", buf);
+
+        printf("Echo: %s\n", msg);
     }
 
-    // 4. 关闭连接
     close(fd);
     printf("client exit.\n");
     return 0;
