@@ -14,3 +14,6 @@ obj/
 # 系统文件
 .DS_Store
 项目-聊天室.md
+
+# 测试日志
+server.log

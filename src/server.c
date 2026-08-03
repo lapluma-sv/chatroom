@@ -6,7 +6,12 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <sys/epoll.h>
 #include "protocol.h"
+
+#define MAX_EVENTS 64
+
+struct epoll_event events[MAX_EVENTS];
 
 volatile sig_atomic_t running = 1;
 
@@ -23,6 +28,8 @@ int main(void)
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
+
+    int client_count = 0;
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if(server_fd < 0)
@@ -54,54 +61,81 @@ int main(void)
         exit(1);
     }
 
+    int epoll_fd = epoll_create1(0);
+    if(epoll_fd < 0)
+    {
+        perror("epoll_create1");
+        exit(1);
+    }
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = server_fd;
+    if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) == -1)
+    {
+        perror("epoll_ctl");
+        exit(1);
+    }
+
     printf("server start.\n");
 
     while(running)
     {
-        int client_fd = accept(server_fd, NULL, NULL);
-        if(client_fd < 0)
+        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        if(n < 0)
         {
-            if(errno == EINTR) break;
-            perror("accept");
+            perror("epoll_wait");
             break;
         }
-        printf("server accept client.\n");
 
-        while(1)
+        for(int i = 0; i < n; i++)
         {
-            uint8_t type;
-            char msg[PROTOCOL_MAX_BODY_SIZE + 1];
-
-            // 读取一条完整消息（内部处理了粘包/拆包）
-            int ret = protocol_recv_msg(client_fd, &type, msg, sizeof(msg));
-            if(ret <= 0)
+            if(events[i].data.fd == server_fd)
             {
-                if(ret == 0) printf("client quit.\n");
-                else perror("protocol_recv_msg");
-                break;
+                int client_fd = accept(server_fd, NULL, NULL);
+                if(client_fd < 0)
+                {
+                    perror("accept");
+                    continue;
+                }
+
+                ev.events = EPOLLIN;
+                ev.data.fd = client_fd;
+                if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) == -1)
+                {
+                    perror("epoll_ctl");
+                    close(client_fd);
+                    continue;
+                }
+                client_count++;
+                printf("新连接加入，fd = %d，当前客户端数 = %d\n", client_fd, client_count);
             }
-
-            // 收到退出消息，直接断开
-            if(type == MSG_QUIT)
+            else
             {
-                break;
-            }
+                uint8_t type;
+                char msg[PROTOCOL_MAX_BODY_SIZE + 1];
+                if(protocol_recv_msg(events[i].data.fd, &type, msg, sizeof(msg)) <= 0)
+                {
+                    close(events[i].data.fd);
+                    continue;
+                }
+                if(type == MSG_TEXT)
+                {
+                    printf("recv [fd=%d]: type = %s, msg = %s\n", events[i].data.fd, protocol_type_str(type), msg);
+                    protocol_send_msg(events[i].data.fd, type, msg);
+                }
+                else if(type == MSG_QUIT)
+                {
+                    close(events[i].data.fd);
+                    client_count--;
+                    printf("客户端退出，fd = %d，当前客户端数 = %d\n", events[i].data.fd, client_count);
+                }
 
-            printf("recv: type = %s, msg = %s\n", protocol_type_str(type), msg);
 
-            // Echo：原样发回去
-            if(protocol_send_msg(client_fd, type, msg) < 0)
-            {
-                perror("protocol_send_msg");
-                break;
             }
         }
-
-        close(client_fd);
-        printf("client exit.\n");
     }
-
     close(server_fd);
+    close(epoll_fd);
     printf("server close.\n");
     return 0;
 }

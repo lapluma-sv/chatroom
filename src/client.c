@@ -7,8 +7,16 @@
 #include <arpa/inet.h>
 #include "protocol.h"
 
-int main(void)
+int main(int argc, char *argv[])
 {
+    if(argc < 3)
+    {
+        printf("Usage: %s <server_ip> <port>\n", argv[0]);
+        exit(1);
+    }
+    const char *server_ip = argv[1];
+    int port = atoi(argv[2]);
+
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if(fd < 0)
     {
@@ -18,8 +26,8 @@ int main(void)
 
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
-        .sin_addr.s_addr = inet_addr("127.0.0.1"),
-        .sin_port = htons(8888)
+        .sin_addr.s_addr = inet_addr(server_ip),
+        .sin_port = htons(port)
     };
 
     if(connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1)
