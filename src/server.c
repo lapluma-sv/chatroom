@@ -81,7 +81,13 @@ int main(void)
                 break;
             }
 
-            printf("recv: type=%d, msg=%s", type, msg);
+            // 收到退出消息，直接断开
+            if(type == MSG_QUIT)
+            {
+                break;
+            }
+
+            printf("recv: type = %s, msg = %s\n", protocol_type_str(type), msg);
 
             // Echo：原样发回去
             if(protocol_send_msg(client_fd, type, msg) < 0)

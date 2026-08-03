@@ -1,6 +1,4 @@
 #include "protocol.h"
-#include <errno.h>
-#include <stdlib.h>
 
 /* ---------- 底层精确读写（解决 TCP 拆包） ---------- */
 
@@ -181,4 +179,20 @@ int protocol_send_msg(int fd, uint8_t type, const char *msg)
 
     // 2. 完整发送
     return write_exact(fd, buf, total_len);
+}
+
+/* ---------- 工具函数 ---------- */
+
+// 把 type 数字转成宏定义名称
+const char* protocol_type_str(uint8_t type)
+{
+    switch(type)
+    {
+        case MSG_TEXT:      return "MSG_TEXT";
+        case MSG_HEARTBEAT: return "MSG_HEARTBEAT";
+        case MSG_QUIT:      return "MSG_QUIT";
+        case MSG_NICKNAME:  return "MSG_NICKNAME";
+        case MSG_SYSTEM:    return "MSG_SYSTEM";
+        default:            return "UNKNOWN";
+    }
 }
