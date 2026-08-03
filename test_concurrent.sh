@@ -73,8 +73,8 @@ ELAPSED=$((END - START))
 # 等待服务器处理完最后的断开
 sleep 2
 
-# 停止服务器
-kill $SERVER_PID 2>/dev/null
+# 停止服务器（发送 SIGINT，让服务器优雅关闭）
+kill -INT $SERVER_PID 2>/dev/null
 wait $SERVER_PID 2>/dev/null
 
 echo "[阶段2] 完成，耗时: ${ELAPSED}秒"
