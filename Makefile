@@ -7,13 +7,17 @@ SRC_DIR = src
 BIN_DIR = bin
 OBJ_DIR = obj
 
-# 源文件和目标文件
+# 源文件
 PROTOCOL_SRC = $(SRC_DIR)/protocol.c
+CLIENT_MANAGER_SRC = $(SRC_DIR)/client_manager.c
+BROADCAST_SRC = $(SRC_DIR)/broadcast.c
 SERVER_SRC = $(SRC_DIR)/server.c
 CLIENT_SRC = $(SRC_DIR)/client.c
+TEST_SRC = $(SRC_DIR)/test_protocol.c
+
+# 可执行文件
 SERVER_BIN = $(BIN_DIR)/server
 CLIENT_BIN = $(BIN_DIR)/client
-TEST_SRC = $(SRC_DIR)/test_protocol.c
 TEST_BIN = $(BIN_DIR)/test_protocol
 
 # 默认目标
@@ -25,9 +29,9 @@ all: dirs $(SERVER_BIN) $(CLIENT_BIN)
 dirs:
 	@mkdir -p $(BIN_DIR) $(OBJ_DIR)
 
-# 编译 server
-$(SERVER_BIN): $(SERVER_SRC) $(PROTOCOL_SRC)
-	$(CC) $(CFLAGS) -Iinclude -o $@ $(SERVER_SRC) $(PROTOCOL_SRC)
+# 编译 server（依赖 4 个源文件）
+$(SERVER_BIN): $(SERVER_SRC) $(PROTOCOL_SRC) $(CLIENT_MANAGER_SRC) $(BROADCAST_SRC)
+	$(CC) $(CFLAGS) -Iinclude -o $@ $(SERVER_SRC) $(PROTOCOL_SRC) $(CLIENT_MANAGER_SRC) $(BROADCAST_SRC)
 
 # 编译 client
 $(CLIENT_BIN): $(CLIENT_SRC) $(PROTOCOL_SRC)
@@ -37,7 +41,7 @@ $(CLIENT_BIN): $(CLIENT_SRC) $(PROTOCOL_SRC)
 $(TEST_BIN): $(TEST_SRC) $(PROTOCOL_SRC)
 	$(CC) $(CFLAGS) -Iinclude -o $@ $(TEST_SRC) $(PROTOCOL_SRC)
 
-# 运行测试（需要先启动 server）
+# 运行测试
 test: $(TEST_BIN)
 	$(TEST_BIN)
 

@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #include <sys/socket.h>
@@ -8,23 +7,12 @@
 #include <signal.h>
 #include <sys/epoll.h>
 #include "protocol.h"
+#include "broadcast.h"
+#include "client_manager.h"
 
 #define MAX_EVENTS 64
-#define MAX_CLIENTS 1024
-#define MAX_NICK_LEN 32
 
-typedef struct {
-    int fd;
-    char nickname[MAX_NICK_LEN];    
-    int has_nickname;               
-} client_info_t;
-
-struct epoll_event events[MAX_EVENTS];
 volatile sig_atomic_t running = 1;
-client_info_t *clients[MAX_CLIENTS];
-int client_count = 0;
-int epoll_fd = 0; 
-struct epoll_event ev;
 
 void sigint_handler(int signum)
 {
@@ -32,108 +20,13 @@ void sigint_handler(int signum)
     running = 0;
 }
 
-void client_join(int fd)
-{
-    if (fd >= MAX_CLIENTS) 
-    {
-        close(fd);
-        return;
-    }
-    client_info_t *client = malloc(sizeof(client_info_t));
-    if(client == NULL)
-    {
-        perror("malloc");
-        exit(1);
-    }
-    client->fd = fd;
-    memset(client->nickname, 0, sizeof(client->nickname));
-    client->has_nickname = 0;
-    clients[fd] = client;
-
-    ev.events = EPOLLIN;
-    ev.data.fd = fd;
-    if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) == -1)
-    {
-        perror("epoll_ctl");
-        free(client);
-        clients[fd] = NULL;
-        close(fd);
-        return;
-    }
-    client_count++;
-    printf("新连接加入，fd = %d，当前客户端数 = %d\n", fd, client_count);
-}
-
-void broadcast_system(const char *msg)
-{
-    char buf[PROTOCOL_MAX_BODY_SIZE];
-    snprintf(buf, sizeof(buf), "[系统] %s", msg);
-    for(int i = 0; i < MAX_CLIENTS; i++)
-    {
-        if(clients[i] != NULL && clients[i]->has_nickname)
-        {
-            protocol_send_msg(clients[i]->fd, MSG_SYSTEM, buf);
-        }
-    }
-}
-void client_remove(int fd)
-{
-    if(clients[fd] == NULL)
-    {
-        return;
-    }
-    if(clients[fd]->has_nickname)
-    {
-        char msg[PROTOCOL_MAX_BODY_SIZE];
-        snprintf(msg, sizeof(msg), "%s 离开了聊天室", clients[fd]->nickname);
-        broadcast_system(msg);
-    }
-    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-    close(fd);
-    free(clients[fd]);
-    clients[fd] = NULL;
-    client_count--;
-    printf("客户端退出，fd = %d，当前客户端数 = %d\n", fd, client_count);
-}
-
-
-void broadcast_text(int sender_fd, const char *msg)
-{
-    char buf[PROTOCOL_MAX_BODY_SIZE];
-    snprintf(buf, sizeof(buf), "[text]%s : %s", clients[sender_fd]->nickname, msg);
-    for(int i = 0; i < MAX_CLIENTS; i++)
-    {
-        if(clients[i] != NULL && clients[i]->has_nickname && i != sender_fd)
-        {
-            protocol_send_msg(clients[i]->fd, MSG_TEXT, buf);
-        }
-    }
-}
-
-void handle_nickname(int fd, const char *nick)
-{
-    if(clients[fd]->has_nickname)
-    {
-        printf("昵称已存在\n");
-        return;
-    }
-    if(strlen(nick) >= MAX_NICK_LEN)
-    {
-        printf("昵称长度超过最大限制\n");
-        return;
-    }
-    strncpy(clients[fd]->nickname, nick, MAX_NICK_LEN - 1);
-    clients[fd]->nickname[MAX_NICK_LEN - 1] = '\0';
-    clients[fd]->has_nickname = 1;
-    printf("fd = %d 昵称已设置，昵称 = %s\n", fd, nick);
-    char msg[PROTOCOL_MAX_BODY_SIZE];
-    snprintf(msg, sizeof(msg), "%s 加入了聊天室", nick);
-    broadcast_system(msg);
-}
-
 int main(void)
 {
+    int epoll_fd = 0; 
+    struct epoll_event ev;
+    struct epoll_event events[MAX_EVENTS];
     struct sigaction sa;
+    
     sa.sa_handler = sigint_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
@@ -170,6 +63,9 @@ int main(void)
         perror("epoll_create1");
         exit(1);
     }
+
+    client_manager_init(epoll_fd);
+
     ev.events = EPOLLIN;
     ev.data.fd = server_fd;
     if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &ev) == -1)
@@ -219,7 +115,7 @@ int main(void)
                 }
                 else if(type == MSG_NICKNAME)
                 {
-                    handle_nickname(events[i].data.fd, msg);
+                    client_set_nickname(events[i].data.fd, msg);
                 }
             }
         }
