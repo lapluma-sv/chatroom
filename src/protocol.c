@@ -109,7 +109,7 @@ int protocol_unpack(const uint8_t *buf, int buf_len, uint8_t *type, char *msg, i
         return PROTOCOL_ERR_MAGIC;
     }
     *type = buf[2];
-    if(*type == 0 || *type >= MSG_TYPE_COUNT)
+    if(*type == 0 || *type > MSG_TYPE_COUNT)
     {
         return PROTOCOL_ERR_TYPE;
     }

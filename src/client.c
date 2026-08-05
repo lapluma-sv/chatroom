@@ -9,6 +9,10 @@
 
 int main(int argc, char *argv[])
 {
+    uint8_t type;
+    char msg[PROTOCOL_MAX_BODY_SIZE + 1];
+    char buf[PROTOCOL_MAX_BODY_SIZE + 1];
+
     if(argc < 3)
     {
         printf("Usage: %s <server_ip> <port>\n", argv[0]);
@@ -16,14 +20,13 @@ int main(int argc, char *argv[])
     }
     const char *server_ip = argv[1];
     int port = atoi(argv[2]);
-
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if(fd < 0)
     {
         perror("socket");
         exit(1);
     }
-
+    
     struct sockaddr_in addr = {
         .sin_family = AF_INET,
         .sin_addr.s_addr = inet_addr(server_ip),
@@ -38,44 +41,69 @@ int main(int argc, char *argv[])
     }
 
     printf("client connect server.\n");
-
-    char buf[PROTOCOL_MAX_BODY_SIZE + 1];
-    while(fgets(buf, sizeof(buf), stdin))
+    printf("请输入昵称: ");
+    fgets(buf, sizeof(buf), stdin);
+    if(buf[strlen(buf) - 1] == '\n') 
     {
-        // 去掉末尾换行符
-        int len = strlen(buf);
-        if(len > 0 && buf[len - 1] == '\n')
-        {
-            buf[len - 1] = '\0';
-            len--;
-        }
+        buf[strlen(buf) - 1] = '\0';
+    }
+    protocol_send_msg(fd, MSG_NICKNAME, buf);
+    if(protocol_recv_msg(fd, &type, msg, sizeof(msg)) > 0 && type == MSG_SYSTEM) 
+    {
+        printf("%s\n", msg);
+    }
 
-        // 判断是否退出
-        if(strcmp(buf, "quit") == 0)
+    fd_set readfds;
+    
+    while(1)
+    {
+        FD_ZERO(&readfds);
+        FD_SET(0, &readfds);       // 0 = stdin
+        FD_SET(fd, &readfds);
+
+        if(select(fd + 1, &readfds, NULL, NULL, NULL) < 0)
         {
-            protocol_send_msg(fd, MSG_QUIT, "quit");
+            perror("select");
             break;
         }
 
-        // 发送消息
-        if(protocol_send_msg(fd, MSG_TEXT, buf) < 0)
+        if(FD_ISSET(0, &readfds))
         {
-            perror("send");
-            break;
+            fgets(buf, sizeof(buf), stdin);
+            int len = strlen(buf);
+            if(len > 0 && buf[len - 1] == '\n')
+            {
+                buf[len - 1] = '\0';
+                len--;
+            }
+            if(strcmp(buf, "quit") == 0)
+            {
+                protocol_send_msg(fd, MSG_QUIT, "quit");
+                break;
+            }
+            // 发送消息
+            if(protocol_send_msg(fd, MSG_TEXT, buf) < 0)
+            {
+                perror("send");
+                break;
+            }
         }
-
-        // 接收回显
-        uint8_t type;
-        char msg[PROTOCOL_MAX_BODY_SIZE + 1];
-        int ret = protocol_recv_msg(fd, &type, msg, sizeof(msg));
-        if(ret <= 0)
+        else if(FD_ISSET(fd, &readfds))
         {
-            if(ret == 0) printf("server close.\n");
-            else perror("recv");
-            break;
+            int ret = protocol_recv_msg(fd, &type, msg, sizeof(msg));
+            if(ret == 0) 
+            {
+                printf("server close.\n");
+                break;
+            }
+            else if(ret < 0)
+            {
+                perror("recv");
+                break;
+            }
+            printf("%s\n", msg);
+            fflush(stdout);
         }
-
-        printf("Echo: %s\n", msg);
     }
 
     close(fd);

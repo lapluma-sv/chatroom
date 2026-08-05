@@ -33,9 +33,6 @@
 #define PROTOCOL_ERR_BUFSIZE   -7
 
 
-
-
-
 /* 函数声明 */
 int protocol_pack(uint8_t type, const char *msg, uint8_t *buf, int buf_len);
 int protocol_unpack(const uint8_t *buf, int buf_len, uint8_t *type, char *msg, int msg_len);
