@@ -37,6 +37,7 @@ echo "[阶段1] 启动 $COUNT 个客户端并连接..."
 START=$(date +%s)
 
 # 启动客户端，但先等待同步信号
+CLIENT_PIDS=""
 for i in $(seq 1 $COUNT); do
     (
         # 等待同步信号（检测文件创建）
@@ -44,12 +45,15 @@ for i in $(seq 1 $COUNT); do
             sleep 0.01
         done
         
+        echo "client_$i"
         # 收到信号，开始发送消息
         for j in $(seq 1 $MSG_COUNT); do
             echo "msg $j from client $i"
             sleep $MSG_INTERVAL
         done
+        echo "SUB[$i] 完成10条消息发送" >&2
     ) | $CLIENT $SERVER $PORT &
+    CLIENT_PIDS="$CLIENT_PIDS $!"
 done
 
 # 等待所有客户端连接上
@@ -64,8 +68,8 @@ echo "[阶段2] 发送同步信号，所有客户端同时开始发送消息..."
 SYNC_TIME=$(date +%s)
 touch "$SYNC_FILE"
 
-# 等待所有客户端完成
-wait
+# 等待所有客户端完成（只等客户端，不等服务器——服务器由下面的 kill -INT 关闭）
+wait $CLIENT_PIDS
 
 END=$(date +%s)
 ELAPSED=$((END - START))

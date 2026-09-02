@@ -59,11 +59,10 @@ void client_remove(int fd)
     {
         return;
     }
+    char msg[PROTOCOL_MAX_BODY_SIZE] = "";
     if(clients[fd]->has_nickname)
     {
-        char msg[PROTOCOL_MAX_BODY_SIZE];
         snprintf(msg, sizeof(msg), "%s 离开了聊天室", clients[fd]->nickname);
-        broadcast_system(msg);
     }
     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
     close(fd);
@@ -71,6 +70,7 @@ void client_remove(int fd)
     clients[fd] = NULL;
     client_count--;
     printf("客户端退出，fd = %d，当前客户端数 = %d\n", fd, client_count);
+    broadcast_system(msg);
 }
 client_info_t *client_get(int fd)
 {
@@ -102,4 +102,51 @@ void client_set_nickname(int fd, const char *nick)
     char msg[PROTOCOL_MAX_BODY_SIZE];
     snprintf(msg, sizeof(msg), "%s 加入了聊天室", nick);
     broadcast_system(msg);
+}
+
+
+
+void client_check_alive(void)
+{
+    int dead_fds[MAX_CLIENTS];
+    int dead_cnt = 0;
+
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        client_info_t *c = clients[i];
+        if(c == NULL) 
+        {
+            continue;
+        }
+
+        char probe;
+        int ret = recv(c->fd, &probe, 1, MSG_PEEK | MSG_DONTWAIT);
+
+        if(ret == 0)
+        {
+            // 对端已关闭（EOF），fd 还挂在表里 → 僵尸
+            dead_fds[dead_cnt++] = c->fd;
+        }
+        else if(ret < 0)
+        {
+            if(errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                // 缓冲区空 = 连接健康空闲，跳过
+            }
+            else
+            {
+                // EPIPE / EBADF / ECONNRESET 等 → 连接已坏死
+                printf("[诊断] 巡检失败 fd=%d ret=%d errno=%d(%s)\n",
+                       c->fd, ret, errno, strerror(errno));
+                dead_fds[dead_cnt++] = c->fd;
+            }
+        }
+        // ret > 0：有数据在排队，正常，主循环会处理
+
+    }
+
+    for(int k = 0; k < dead_cnt; k++)
+    {
+        client_remove(dead_fds[k]);
+    }
 }

@@ -23,14 +23,15 @@
 #define MSG_SYSTEM    0x05
 
 /* 错误码 */
-#define PROTOCOL_ERR_EMPTY      0
-#define PROTOCOL_ERR_INVALID    -1
-#define PROTOCOL_ERR_MSGSIZE    -2
-#define PROTOCOL_ERR_TYPE       -3
-#define PROTOCOL_ERR_UNKNOWN    -4
-#define PROTOCOL_ERR_MAGIC      -5
-#define PROTOCOL_ERR_CHECKSUM   -6
-#define PROTOCOL_ERR_BUFSIZE   -7
+#define PROTOCOL_ERR_EMPTY      -1
+#define PROTOCOL_ERR_INVALID    -2
+#define PROTOCOL_ERR_MSGSIZE    -3
+#define PROTOCOL_ERR_TYPE       -4
+#define PROTOCOL_ERR_UNKNOWN    -5
+#define PROTOCOL_ERR_MAGIC      -6
+#define PROTOCOL_ERR_CHECKSUM   -7
+#define PROTOCOL_ERR_BUFSIZE    -8
+#define PROTOCOL_ERR_WOULDBLOCK -10  /* 非阻塞 fd：暂时无数据，连接仍正常 */
 
 
 /* 函数声明 */

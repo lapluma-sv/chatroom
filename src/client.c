@@ -7,6 +7,27 @@
 #include <arpa/inet.h>
 #include "protocol.h"
 
+static void drain_socket(int fd)
+{
+    uint8_t type;
+    char msg[PROTOCOL_MAX_BODY_SIZE + 1];
+
+    while(1)
+    {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(fd, &readfds);
+        struct timeval tv = { .tv_sec = 0, .tv_usec = 500000 };  // 每轮重置！
+
+        int sel = select(fd + 1, &readfds, NULL, NULL, &tv);
+        if(sel <= 0) break;          // 超时没数据 / 出错 → 排空结束
+
+        int ret = protocol_recv_msg(fd, &type, msg, sizeof(msg));
+        if(ret <= 0) break;          // 读完、对端关、EAGAIN、出错 → 结束
+        printf("%s\n", msg);         // 还有数据就继续下一轮
+    }
+}
+
 int main(int argc, char *argv[])
 {
     uint8_t type;
@@ -43,10 +64,13 @@ int main(int argc, char *argv[])
     printf("client connect server.\n");
     printf("请输入昵称: ");
     fgets(buf, sizeof(buf), stdin);
-    if(buf[strlen(buf) - 1] == '\n') 
+    if(buf[strlen(buf) - 1] == '\n')
     {
         buf[strlen(buf) - 1] = '\0';
     }
+    char mynick[64];
+    snprintf(mynick, sizeof(mynick), "%s", buf);   // 记住自己的身份，便于日志对照
+    int sent_count = 0;
     protocol_send_msg(fd, MSG_NICKNAME, buf);
     if(protocol_recv_msg(fd, &type, msg, sizeof(msg)) > 0 && type == MSG_SYSTEM) 
     {
@@ -69,7 +93,14 @@ int main(int argc, char *argv[])
 
         if(FD_ISSET(0, &readfds))
         {
-            fgets(buf, sizeof(buf), stdin);
+            if(fgets(buf, sizeof(buf), stdin) == NULL)
+            {
+                if(feof(stdin))
+                    printf("[诊断] [%s] 已发送%d条后 stdin EOF\n", mynick, sent_count);
+                else
+                    printf("[诊断] [%s] stdin 错误: %s\n", mynick, strerror(errno));
+                break;
+            }
             int len = strlen(buf);
             if(len > 0 && buf[len - 1] == '\n')
             {
@@ -84,9 +115,10 @@ int main(int argc, char *argv[])
             // 发送消息
             if(protocol_send_msg(fd, MSG_TEXT, buf) < 0)
             {
-                perror("send");
+                printf("[诊断] [%s] 第%d条发送失败: %s\n", mynick, sent_count + 1, strerror(errno));
                 break;
             }
+            sent_count++;
         }
         else if(FD_ISSET(fd, &readfds))
         {
@@ -105,6 +137,8 @@ int main(int argc, char *argv[])
             fflush(stdout);
         }
     }
+
+    drain_socket(fd);
 
     close(fd);
     printf("client exit.\n");

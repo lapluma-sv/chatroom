@@ -11,6 +11,10 @@ int read_exact(int fd, void *buf, int n)
         int ret = recv(fd, (char*)buf + received, n - received, 0);
         if(ret == -1)
         {
+            if(errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                return PROTOCOL_ERR_WOULDBLOCK;
+            }
             return -1;  // 出错或被信号打断，直接返回
         }
         if(ret == 0) return 0;

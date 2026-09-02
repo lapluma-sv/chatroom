@@ -24,5 +24,6 @@ void client_remove(int fd); // 客户端移除
 client_info_t *client_get(int fd); // 根据 fd 获取客户端信息（供广播模块用）
 int client_get_count(); // 获取在线人数
 void client_set_nickname(int fd, const char *nick); // 设置客户端昵称
+void client_check_alive(void); // 巡检：清理 fd 已死但记录未删的僵尸客户端
 
 #endif

@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/epoll.h>
+#include <fcntl.h>
 #include "protocol.h"
 #include "broadcast.h"
 #include "client_manager.h"
@@ -22,6 +23,7 @@ void sigint_handler(int signum)
 
 int main(void)
 {
+    setvbuf(stdout, NULL, _IOLBF, 0);   // 行缓冲：重定向到文件时日志也能实时落盘
     int epoll_fd = 0; 
     struct epoll_event ev;
     struct epoll_event events[MAX_EVENTS];
@@ -31,6 +33,7 @@ int main(void)
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGINT, &sa, NULL);
+    signal(SIGPIPE, SIG_IGN);
 
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if(server_fd < 0)
@@ -51,7 +54,7 @@ int main(void)
         perror("bind");
         exit(1);
     }
-    if(listen(server_fd, 5) == -1)
+    if(listen(server_fd, 128) == -1)
     {
         close(server_fd);
         perror("listen");
@@ -77,9 +80,13 @@ int main(void)
 
     while(running)
     {
-        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, 1000);
         if(n < 0)
         {
+            if(errno == EINTR)
+            {
+                continue;
+            }
             perror("epoll_wait");
             break;
         }
@@ -94,15 +101,29 @@ int main(void)
                     perror("accept");
                     continue;
                 }
+                int flags = fcntl(client_fd, F_GETFL, 0);
+                fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
                 client_join(client_fd);
             }
             else
             {
                 uint8_t type;
                 char msg[PROTOCOL_MAX_BODY_SIZE + 1];
-                if(protocol_recv_msg(events[i].data.fd, &type, msg, sizeof(msg)) <= 0)
+                int ret = protocol_recv_msg(events[i].data.fd, &type, msg, sizeof(msg));
+                if(ret == PROTOCOL_ERR_WOULDBLOCK)
+                {
+                    continue;   // 暂时没数据，连接还活着，下轮再来
+                }
+                if(ret == PROTOCOL_ERR_MAGIC || ret == PROTOCOL_ERR_CHECKSUM)
+                {
+                    printf("协议流错位！fd=%d err=%d\n", events[i].data.fd, ret);
+                    client_remove(events[i].data.fd);
+                    continue;   // 错位后无法恢复，断开
+                }
+                if(ret <= 0)
                 {
                     client_remove(events[i].data.fd);
+                    continue;
                 }
                 if(type == MSG_TEXT)
                 {
@@ -119,6 +140,9 @@ int main(void)
                 }
             }
         }
+
+        // 每轮（最多 1 秒一次）对账：清理 fd 已死但记录未删的僵尸客户端
+        client_check_alive();
     }
     close(server_fd);
     close(epoll_fd);
