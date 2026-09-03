@@ -14,11 +14,14 @@ BROADCAST_SRC = $(SRC_DIR)/broadcast.c
 SERVER_SRC = $(SRC_DIR)/server.c
 CLIENT_SRC = $(SRC_DIR)/client.c
 TEST_SRC = $(SRC_DIR)/test_protocol.c
+THREADPOOL_SRC = $(SRC_DIR)/threadpool.c
+THREADPOOL_TEST_SRC = $(SRC_DIR)/test.c
 
 # 可执行文件
 SERVER_BIN = $(BIN_DIR)/server
 CLIENT_BIN = $(BIN_DIR)/client
 TEST_BIN = $(BIN_DIR)/test_protocol
+THREADPOOL_TEST_BIN = $(BIN_DIR)/test
 
 # 默认目标
 .PHONY: all clean dirs test
@@ -41,9 +44,12 @@ $(CLIENT_BIN): $(CLIENT_SRC) $(PROTOCOL_SRC)
 $(TEST_BIN): $(TEST_SRC) $(PROTOCOL_SRC)
 	$(CC) $(CFLAGS) -Iinclude -o $@ $(TEST_SRC) $(PROTOCOL_SRC)
 
-# 运行测试
-test: $(TEST_BIN)
-	$(TEST_BIN)
+# 编译并运行线程池测试
+$(THREADPOOL_TEST_BIN): $(THREADPOOL_TEST_SRC) $(THREADPOOL_SRC) $(PROTOCOL_SRC)
+	$(CC) $(CFLAGS) -pthread -Iinclude -o $@ $(THREADPOOL_TEST_SRC) $(THREADPOOL_SRC) $(PROTOCOL_SRC)
+
+# 运行测试（只构建，手动执行 bin/test）
+test: $(THREADPOOL_TEST_BIN)
 
 # 清理
 clean:

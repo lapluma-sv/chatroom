@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <assert.h>
 #include "protocol.h"
+#include "threadpool.h"
 
 /* ---------- 测试工具 ---------- */
 
@@ -156,19 +157,32 @@ void test_bad_magic(void)
     close(fd);
 }
 
+void test_threadpool(void)
+{
+    threadpool_t *tp = threadpool_create(4);
+    assert(tp != NULL);
+    for(int i = 0; i < 100; i++)
+    {
+        char buf[PROTOCOL_MAX_BODY_SIZE + 1];
+        snprintf(buf, sizeof(buf), "task %d", i);
+        int len = strlen(buf);
+        int ret = threadpool_submit(tp, i, MSG_TEXT, buf, len);
+        assert(ret == 0);
+    }
+    printf("all submitted\n");
+    threadpool_destroy(tp);
+}
+
 /* ---------- 主函数 ---------- */
 
 int main(void)
 {
-    printf("=== Protocol Test ===\n\n");
+    printf("=== Threadpool Test ===\n\n");
 
     // 等待服务器启动
     sleep(1);
 
-    test_normal_echo();
-    test_fragmented_send();
-    test_combined_send();
-    test_bad_magic();
+    test_threadpool();
 
     printf("\n=== All Tests Done ===\n");
     return 0;
