@@ -6,6 +6,7 @@ static client_info_t *clients[MAX_CLIENTS];
 static int client_count = 0;
 static int epoll_fd = 0;
 static struct epoll_event ev;
+static pthread_mutex_t g_clients_lock;
 
 
 
@@ -14,6 +15,12 @@ int client_manager_init(int fd)
     epoll_fd = fd;
     memset(clients, 0, sizeof(clients));
     client_count = 0;
+    int ret = pthread_mutex_init(&g_clients_lock, NULL);
+    if(ret != 0)
+    {
+        perror("pthread_mutex_init");
+        exit(1);
+    }
     return 0;
 }
 
@@ -35,8 +42,9 @@ void client_join(int fd)
     client->fd = fd;
     memset(client->nickname, 0, sizeof(client->nickname));
     client->has_nickname = 0;
+    pthread_mutex_lock(&g_clients_lock);
     clients[fd] = client;
-
+    
     ev.events = EPOLLIN;
     ev.data.fd = fd;
     if(epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev) == -1)
@@ -45,18 +53,23 @@ void client_join(int fd)
         free(client);
         clients[fd] = NULL;
         close(fd);
+        pthread_mutex_unlock(&g_clients_lock);
         return;
     }
     client_count++;
-    printf("新连接加入，fd = %d，当前客户端数 = %d\n", fd, client_count);
+    int count = client_count;
+    pthread_mutex_unlock(&g_clients_lock);
+    printf("新连接加入，fd = %d，当前客户端数 = %d\n", fd, count);
 }
 
 
 
 void client_remove(int fd)
 {
+    pthread_mutex_lock(&g_clients_lock);
     if(clients[fd] == NULL)
     {
+        pthread_mutex_unlock(&g_clients_lock);
         return;
     }
     char msg[PROTOCOL_MAX_BODY_SIZE] = "";
@@ -69,35 +82,53 @@ void client_remove(int fd)
     free(clients[fd]);
     clients[fd] = NULL;
     client_count--;
-    printf("客户端退出，fd = %d，当前客户端数 = %d\n", fd, client_count);
+    int count = client_count;
+    pthread_mutex_unlock(&g_clients_lock);
+    printf("客户端退出，fd = %d，当前客户端数 = %d\n", fd, count);
     broadcast_system(msg);
 }
+
+
+
 client_info_t *client_get(int fd)
 {
-    return clients[fd];
+    pthread_mutex_lock(&g_clients_lock);
+    client_info_t *client = clients[fd];
+    pthread_mutex_unlock(&g_clients_lock);
+    return client;
 }
+
+
+
 int client_get_count()
 {
-    return client_count;
+    pthread_mutex_lock(&g_clients_lock);
+    int count = client_count;
+    pthread_mutex_unlock(&g_clients_lock);
+    return count;
 }
 
 
 
 void client_set_nickname(int fd, const char *nick)
 {
+    pthread_mutex_lock(&g_clients_lock);
     if(clients[fd]->has_nickname)
     {
+        pthread_mutex_unlock(&g_clients_lock);
         printf("昵称已存在\n");
         return;
     }
     if(strlen(nick) >= MAX_NICK_LEN)
     {
+        pthread_mutex_unlock(&g_clients_lock);
         printf("昵称长度超过最大限制\n");
         return;
     }
     strncpy(clients[fd]->nickname, nick, MAX_NICK_LEN - 1);
     clients[fd]->nickname[MAX_NICK_LEN - 1] = '\0';
     clients[fd]->has_nickname = 1;
+    pthread_mutex_unlock(&g_clients_lock);
     printf("fd = %d 昵称已设置，昵称 = %s\n", fd, nick);
     char msg[PROTOCOL_MAX_BODY_SIZE];
     snprintf(msg, sizeof(msg), "%s 加入了聊天室", nick);
@@ -113,12 +144,13 @@ void client_check_alive(void)
 
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
+        pthread_mutex_lock(&g_clients_lock);
         client_info_t *c = clients[i];
+        pthread_mutex_unlock(&g_clients_lock);
         if(c == NULL) 
         {
             continue;
         }
-
         char probe;
         int ret = recv(c->fd, &probe, 1, MSG_PEEK | MSG_DONTWAIT);
 
@@ -136,13 +168,11 @@ void client_check_alive(void)
             else
             {
                 // EPIPE / EBADF / ECONNRESET 等 → 连接已坏死
-                printf("[诊断] 巡检失败 fd=%d ret=%d errno=%d(%s)\n",
-                       c->fd, ret, errno, strerror(errno));
+                printf("[诊断] 巡检失败 fd=%d ret=%d errno=%d(%s)\n", c->fd, ret, errno, strerror(errno));
                 dead_fds[dead_cnt++] = c->fd;
             }
         }
         // ret > 0：有数据在排队，正常，主循环会处理
-
     }
 
     for(int k = 0; k < dead_cnt; k++)
