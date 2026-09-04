@@ -1,6 +1,6 @@
 # 编译器和选项
 CC = gcc
-CFLAGS = -Wall -g -O0
+CFLAGS = -Wall -g -O0 -pthread
 
 # 目录
 SRC_DIR = src
@@ -33,8 +33,8 @@ dirs:
 	@mkdir -p $(BIN_DIR) $(OBJ_DIR)
 
 # 编译 server（依赖 4 个源文件）
-$(SERVER_BIN): $(SERVER_SRC) $(PROTOCOL_SRC) $(CLIENT_MANAGER_SRC) $(BROADCAST_SRC)
-	$(CC) $(CFLAGS) -Iinclude -o $@ $(SERVER_SRC) $(PROTOCOL_SRC) $(CLIENT_MANAGER_SRC) $(BROADCAST_SRC)
+$(SERVER_BIN): $(SERVER_SRC) $(PROTOCOL_SRC) $(CLIENT_MANAGER_SRC) $(BROADCAST_SRC) $(THREADPOOL_SRC)
+	$(CC) $(CFLAGS) -Iinclude -o $@ $(SERVER_SRC) $(PROTOCOL_SRC) $(CLIENT_MANAGER_SRC) $(BROADCAST_SRC) $(THREADPOOL_SRC)
 
 # 编译 client
 $(CLIENT_BIN): $(CLIENT_SRC) $(PROTOCOL_SRC)

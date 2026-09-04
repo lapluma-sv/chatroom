@@ -62,16 +62,49 @@ int main(int argc, char *argv[])
     }
 
     printf("client connect server.\n");
-    printf("请输入昵称: ");
-    fgets(buf, sizeof(buf), stdin);
-    if(buf[strlen(buf) - 1] == '\n')
+    char buff[64] = {0};
+    while(1)
     {
-        buf[strlen(buf) - 1] = '\0';
+        printf("请输入昵称: ");
+        if(fgets(buff, sizeof(buff), stdin) == NULL)
+        {
+            // EOF/输入错误：流已关闭，没有下一次输入，不能重试（防死循环）
+            printf("\n[诊断] stdin 已关闭，退出\n");
+            close(fd);
+            exit(1);
+        }
+        size_t len = strlen(buff);
+        if(len > 0 && buff[len - 1] == '\n')
+        {
+            // 找到换行 = 整行读入，stdin 干净，去换行即可
+            buff[len - 1] = '\0';
+            len--;
+        }
+        else
+        {
+            // 没找到换行 = 行超长被截断，残留还在 stdin，排空到行尾
+            int c;
+            while((c = getchar()) != '\n' && c != EOF) { }
+            if(c == EOF)
+            {
+                printf("\n[诊断] stdin 已关闭，退出\n");
+                close(fd);
+                exit(1);
+            }
+            printf("昵称长度不能超过%d个字符, 请重新输入\n", (int)sizeof(buff) - 2);
+            continue;
+        }
+        if(len == 0)
+        {
+            printf("昵称不能为空, 请重新输入\n");
+            continue;
+        }
+        break;
     }
     char mynick[64];
-    snprintf(mynick, sizeof(mynick), "%s", buf);   // 记住自己的身份，便于日志对照
+    snprintf(mynick, sizeof(mynick), "%s", buff);   // 记住自己的身份，便于日志对照
     int sent_count = 0;
-    protocol_send_msg(fd, MSG_NICKNAME, buf);
+    protocol_send_msg(fd, MSG_NICKNAME, buff);
     if(protocol_recv_msg(fd, &type, msg, sizeof(msg)) > 0 && type == MSG_SYSTEM) 
     {
         printf("%s\n", msg);

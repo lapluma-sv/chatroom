@@ -180,3 +180,19 @@ void client_check_alive(void)
         client_remove(dead_fds[k]);
     }
 }
+
+int client_snapshot_fds(int *out, int max, int exclude_fd)
+{
+    pthread_mutex_lock(&g_clients_lock);
+    int count = 0;
+    for(int i = 0; i < MAX_CLIENTS; i++)
+    {
+        client_info_t *client = clients[i];
+        if(client != NULL && client->has_nickname && i != exclude_fd && count < max)
+        {
+            out[count++] = client->fd;
+        }
+    }
+    pthread_mutex_unlock(&g_clients_lock);
+    return count;
+}
