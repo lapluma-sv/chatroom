@@ -8,6 +8,7 @@
 #include <assert.h>
 #include "protocol.h"
 #include "threadpool.h"
+#include "client_manager.h"
 
 /* ---------- 测试工具 ---------- */
 
@@ -180,8 +181,9 @@ int main(void)
     printf("=== Threadpool Test ===\n\n");
 
     // 等待服务器启动
-    sleep(1);
+    //sleep(1);
 
+    client_manager_init(0);
     test_threadpool();
 
     printf("\n=== All Tests Done ===\n");

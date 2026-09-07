@@ -1,4 +1,5 @@
 #include "threadpool.h"
+#include "broadcast.h"
 
 static void *threadpool_worker(void *arg)
 {
@@ -23,7 +24,14 @@ static void *threadpool_worker(void *arg)
             tp->tail = NULL;
         }
         pthread_mutex_unlock(&tp->lock);
-        printf("sender_fd: %d, type: %d, body_len: %d\n", task->sender_fd, task->type, task->body_len);
+        if(task -> sender_fd >= 0)
+        {
+            broadcast_text(task->sender_fd, task->body);
+        }
+        else
+        {
+            broadcast_system(task->body);
+        }
         free(task);
     }
 }
