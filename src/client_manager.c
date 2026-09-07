@@ -140,24 +140,25 @@ void client_set_nickname(int fd, const char *nick)
 void client_check_alive(void)
 {
     int dead_fds[MAX_CLIENTS];
+    int dead_errnos[MAX_CLIENTS];
     int dead_cnt = 0;
 
+    pthread_mutex_lock(&g_clients_lock);
     for(int i = 0; i < MAX_CLIENTS; i++)
     {
-        pthread_mutex_lock(&g_clients_lock);
         client_info_t *c = clients[i];
-        pthread_mutex_unlock(&g_clients_lock);
         if(c == NULL) 
         {
             continue;
         }
         char probe;
         int ret = recv(c->fd, &probe, 1, MSG_PEEK | MSG_DONTWAIT);
-
+        
         if(ret == 0)
         {
-            // 对端已关闭（EOF），fd 还挂在表里 → 僵尸
-            dead_fds[dead_cnt++] = c->fd;
+            dead_errnos[dead_cnt] = 0;// 对端已关闭（EOF），fd 还挂在表里 → 僵尸
+            dead_fds[dead_cnt] = c->fd;
+            dead_cnt++;
         }
         else if(ret < 0)
         {
@@ -167,16 +168,21 @@ void client_check_alive(void)
             }
             else
             {
-                // EPIPE / EBADF / ECONNRESET 等 → 连接已坏死
-                printf("[诊断] 巡检失败 fd=%d ret=%d errno=%d(%s)\n", c->fd, ret, errno, strerror(errno));
-                dead_fds[dead_cnt++] = c->fd;
+                dead_errnos[dead_cnt] = errno;
+                dead_fds[dead_cnt] = c->fd;
+                dead_cnt++;
             }
         }
         // ret > 0：有数据在排队，正常，主循环会处理
     }
-
+    pthread_mutex_unlock(&g_clients_lock);
+    
     for(int k = 0; k < dead_cnt; k++)
     {
+        if(dead_errnos[k])
+        {
+            printf("[诊断] 巡检失败 fd=%d errno=%d\n", dead_fds[k], dead_errnos[k]);
+        }
         client_remove(dead_fds[k]);
     }
 }
@@ -195,4 +201,27 @@ int client_snapshot_fds(int *out, int max, int exclude_fd)
     }
     pthread_mutex_unlock(&g_clients_lock);
     return count;
+}
+
+
+int client_get_nickname(int fd, char *name, int namesize)
+{
+    pthread_mutex_lock(&g_clients_lock);
+    if(fd <= 0 || fd >= MAX_CLIENTS || namesize <= 0 || clients[fd] == NULL)
+    {
+        pthread_mutex_unlock(&g_clients_lock);
+        return -1;
+    }
+    if(clients[fd]->has_nickname)
+    {
+        strncpy(name, clients[fd]->nickname, namesize - 1);
+        name[namesize - 1] = '\0';
+    }
+    else
+    {
+        pthread_mutex_unlock(&g_clients_lock);
+        return -1;
+    }
+    pthread_mutex_unlock(&g_clients_lock);
+    return 0;
 }
