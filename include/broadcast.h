@@ -5,8 +5,11 @@
 #include "client_manager.h"
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 
+int is_expected_disconnected(int err);
 void broadcast_system(const char *msg);
 void broadcast_text(int sender_fd, const char *msg);
+int get_expected_disconnected(void);
 
 #endif

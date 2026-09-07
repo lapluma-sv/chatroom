@@ -1,14 +1,11 @@
 #include "client_manager.h"
-
-
+#include "broadcast.h"
 
 static client_info_t *clients[MAX_CLIENTS];
 static int client_count = 0;
 static int epoll_fd = 0;
 static struct epoll_event ev;
 static pthread_mutex_t g_clients_lock;
-
-
 
 int client_manager_init(int fd)
 {
@@ -23,8 +20,6 @@ int client_manager_init(int fd)
     }
     return 0;
 }
-
-
 
 void client_join(int fd)
 {
@@ -62,12 +57,10 @@ void client_join(int fd)
     printf("新连接加入，fd = %d，当前客户端数 = %d\n", fd, count);
 }
 
-
-
 void client_remove(int fd)
 {
     pthread_mutex_lock(&g_clients_lock);
-    if(clients[fd] == NULL)
+    if(fd <= 0 || fd >= MAX_CLIENTS || clients[fd] == NULL)
     {
         pthread_mutex_unlock(&g_clients_lock);
         return;
@@ -88,19 +81,7 @@ void client_remove(int fd)
     broadcast_system(msg);
 }
 
-
-
-client_info_t *client_get(int fd)
-{
-    pthread_mutex_lock(&g_clients_lock);
-    client_info_t *client = clients[fd];
-    pthread_mutex_unlock(&g_clients_lock);
-    return client;
-}
-
-
-
-int client_get_count()
+int client_get_count(void)
 {
     pthread_mutex_lock(&g_clients_lock);
     int count = client_count;
@@ -108,15 +89,13 @@ int client_get_count()
     return count;
 }
 
-
-
 void client_set_nickname(int fd, const char *nick)
 {
     pthread_mutex_lock(&g_clients_lock);
-    if(clients[fd]->has_nickname)
+    if(fd <= 0 || fd >= MAX_CLIENTS || clients[fd] == NULL || clients[fd]->has_nickname)
     {
         pthread_mutex_unlock(&g_clients_lock);
-        printf("昵称已存在\n");
+        printf("昵称设置失败\n");
         return;
     }
     if(strlen(nick) >= MAX_NICK_LEN)
@@ -134,8 +113,6 @@ void client_set_nickname(int fd, const char *nick)
     snprintf(msg, sizeof(msg), "%s 加入了聊天室", nick);
     broadcast_system(msg);
 }
-
-
 
 void client_check_alive(void)
 {
@@ -181,7 +158,10 @@ void client_check_alive(void)
     {
         if(dead_errnos[k])
         {
-            printf("[诊断] 巡检失败 fd=%d errno=%d\n", dead_fds[k], dead_errnos[k]);
+            if(!is_expected_disconnected(dead_errnos[k]))
+            {
+                printf("[诊断] 巡检失败 fd=%d errno=%d\n", dead_fds[k], dead_errnos[k]);
+            }
         }
         client_remove(dead_fds[k]);
     }

@@ -160,5 +160,6 @@ int main(void)
     close(epoll_fd);
     threadpool_destroy(tp);
     printf("server close.\n");
+    printf("expected disconnected: %d\n", get_expected_disconnected());
     return 0;
 }
