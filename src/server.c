@@ -10,6 +10,7 @@
 #include "protocol.h"
 #include "broadcast.h"
 #include "client_manager.h"
+#include "threadpool.h"
 
 #define MAX_EVENTS 64
 
@@ -68,6 +69,14 @@ int main(void)
     }
 
     client_manager_init(epoll_fd);
+    threadpool_t *tp = threadpool_create(4);
+    if(tp == NULL)
+    {
+        perror("threadpool_create");
+        close(server_fd);
+        close(epoll_fd);
+        exit(1);
+    }
 
     ev.events = EPOLLIN;
     ev.data.fd = server_fd;
@@ -128,7 +137,10 @@ int main(void)
                 if(type == MSG_TEXT)
                 {
                     printf("recv [fd=%d]: type = %s, msg = %s\n", events[i].data.fd, protocol_type_str(type), msg);
-                    broadcast_text(events[i].data.fd, msg);
+                    if(threadpool_submit(tp, events[i].data.fd, type, msg, ret) < 0)
+                    {
+                        printf("[诊断] 入队失败 fd=%d\n", events[i].data.fd);
+                    }
                 }
                 else if(type == MSG_QUIT)
                 {
@@ -146,6 +158,7 @@ int main(void)
     }
     close(server_fd);
     close(epoll_fd);
+    threadpool_destroy(tp);
     printf("server close.\n");
     return 0;
 }
