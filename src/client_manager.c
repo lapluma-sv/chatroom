@@ -23,7 +23,7 @@ int client_manager_init(int fd)
 
 void client_join(int fd)
 {
-    if (fd >= MAX_CLIENTS) 
+    if (fd <= 0 || fd >= MAX_CLIENTS) 
     {
         close(fd);
         return;
@@ -36,6 +36,8 @@ void client_join(int fd)
     }
     client->fd = fd;
     memset(client->nickname, 0, sizeof(client->nickname));
+    memset(client->recv_buf, 0, sizeof(client->recv_buf));
+    client->recv_buf_len = 0;
     client->has_nickname = 0;
     pthread_mutex_lock(&g_clients_lock);
     clients[fd] = client;
@@ -202,6 +204,20 @@ int client_get_nickname(int fd, char *name, int namesize)
         pthread_mutex_unlock(&g_clients_lock);
         return -1;
     }
+    pthread_mutex_unlock(&g_clients_lock);
+    return 0;
+}
+
+int client_get_recv_buf(int fd, char **buf, int **len)
+{
+    pthread_mutex_lock(&g_clients_lock);
+    if(fd <= 0 || fd >= MAX_CLIENTS || clients[fd] == NULL)
+    {
+        pthread_mutex_unlock(&g_clients_lock);
+        return -1;
+    }
+    *buf = clients[fd]->recv_buf;
+    *len = &clients[fd]->recv_buf_len;
     pthread_mutex_unlock(&g_clients_lock);
     return 0;
 }

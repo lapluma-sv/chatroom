@@ -2,31 +2,6 @@
 
 /* ---------- 底层精确读写（解决 TCP 拆包） ---------- */
 
-// 保证读取 n 字节，不够就循环收
-int read_exact(int fd, void *buf, int n)
-{
-    int received = 0;
-    while(received < n)
-    {
-        int ret = recv(fd, (char*)buf + received, n - received, 0);
-        if(ret == -1)
-        {
-            if(errno == EAGAIN || errno == EWOULDBLOCK)
-            {
-                return PROTOCOL_ERR_WOULDBLOCK;
-            }
-            else if(errno == EINTR)
-            {
-                continue;
-            }
-            return -1;  //出错
-        }
-        if(ret == 0) return 0;
-        received += ret;
-    }
-    return received;
-}
-
 // 保证发送 n 字节，没发完就循环发
 int write_exact(int fd, const void *buf, int n)
 {
@@ -46,8 +21,6 @@ int write_exact(int fd, const void *buf, int n)
     }
     return sent;
 }
-
-/* ---------- 打包/解包 ---------- */
 
 // 打包：把消息类型和文本封装成协议包
 int protocol_pack(uint8_t type, const char *msg, uint8_t *buf, int buf_len)
@@ -147,41 +120,48 @@ int protocol_unpack(const uint8_t *buf, int buf_len, uint8_t *type, char *msg, i
 
 // 读取一个完整的应用层消息
 // 返回: >0 成功, 0 客户端关闭, -1 出错
-int protocol_recv_msg(int fd, uint8_t *type, char *msg, int msg_len)
+int protocol_recv_msg(int fd, char *recv_buf, int *recv_len, uint8_t *type, char *msg, int msg_len)
 {
-    uint8_t header[PROTOCOL_HEADER_SIZE];
-
-    // 1. 先读固定 7 字节包头
-    int ret = read_exact(fd, header, PROTOCOL_HEADER_SIZE);
-    if(ret != PROTOCOL_HEADER_SIZE) return ret;
-
-    // 2. 从包头里读出正文长度
-    int body_len = ntohl(*(uint32_t*)(header + 3));
+    int ret = 0;
+    while(*recv_len < PROTOCOL_BUF_SIZE)
+    {
+        ret = recv(fd, recv_buf + *recv_len, PROTOCOL_BUF_SIZE - *recv_len, 0);
+        if(ret == 0) return 0;
+        if(ret < 0)
+        {
+            if(errno == EINTR)
+            {
+                continue;
+            }
+            else if(errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                break;
+            }
+            else
+            {
+                return PROTOCOL_ERR_UNKNOWN;
+            }
+        }
+        *recv_len += ret;
+    }
+    if(*recv_len < PROTOCOL_HEADER_SIZE)
+    {
+        return PROTOCOL_ERR_WOULDBLOCK;
+    }
+    int body_len = ntohl(*(uint32_t*)(recv_buf + 3));
     if(body_len > PROTOCOL_MAX_BODY_SIZE)
     {
         return PROTOCOL_ERR_MSGSIZE;
     }
-    int total_len = PROTOCOL_HEADER_SIZE + body_len + PROTOCOL_TAIL_SIZE;
-
-    // 3. 分配足够空间装整个包
-    uint8_t *full_buf = malloc(total_len);
-    if(!full_buf) return -1;
-    memcpy(full_buf, header, PROTOCOL_HEADER_SIZE);
-
-    // 4. 读出剩余的正文 + 尾部
-    ret = read_exact(fd, full_buf + PROTOCOL_HEADER_SIZE, body_len + PROTOCOL_TAIL_SIZE);
-    if(ret != body_len + PROTOCOL_TAIL_SIZE)
+    if(*recv_len < body_len + PROTOCOL_HEADER_SIZE + PROTOCOL_TAIL_SIZE)
     {
-        free(full_buf);
-        return ret <= 0 ? ret : -1;
+        return PROTOCOL_ERR_WOULDBLOCK;
     }
-
-    // 5. 解包
-    ret = protocol_unpack(full_buf, total_len, type, msg, msg_len);
-    free(full_buf);
-
+    ret = protocol_unpack((const uint8_t*)recv_buf, body_len + PROTOCOL_HEADER_SIZE + PROTOCOL_TAIL_SIZE, type, msg, msg_len);
     if(ret < 0) return ret;
-    return body_len;
+    *recv_len -= body_len + PROTOCOL_HEADER_SIZE + PROTOCOL_TAIL_SIZE;
+    memmove(recv_buf, recv_buf + body_len + PROTOCOL_HEADER_SIZE + PROTOCOL_TAIL_SIZE, *recv_len);
+    return ret;
 }
 
 // 发送一个完整的应用层消息

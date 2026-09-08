@@ -5,8 +5,13 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include "protocol.h"
 
+
+static int running = 1;
+static char g_recv_buf[PROTOCOL_BUF_SIZE];
+static int  g_recv_len = 0;
 static void drain_socket(int fd)
 {
     uint8_t type;
@@ -14,15 +19,7 @@ static void drain_socket(int fd)
 
     while(1)
     {
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(fd, &readfds);
-        struct timeval tv = { .tv_sec = 0, .tv_usec = 500000 };  // 每轮重置！
-
-        int sel = select(fd + 1, &readfds, NULL, NULL, &tv);
-        if(sel <= 0) break;          // 超时没数据 / 出错 → 排空结束
-
-        int ret = protocol_recv_msg(fd, &type, msg, sizeof(msg));
+        int ret = protocol_recv_msg(fd, g_recv_buf, &g_recv_len, &type, msg, sizeof(msg));
         if(ret <= 0) break;          // 读完、对端关、EAGAIN、出错 → 结束
         printf("%s\n", msg);         // 还有数据就继续下一轮
     }
@@ -61,6 +58,8 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
     printf("client connect server.\n");
     char buff[64] = {0};
     while(1)
@@ -105,14 +104,14 @@ int main(int argc, char *argv[])
     snprintf(mynick, sizeof(mynick), "%s", buff);   // 记住自己的身份，便于日志对照
     int sent_count = 0;
     protocol_send_msg(fd, MSG_NICKNAME, buff);
-    if(protocol_recv_msg(fd, &type, msg, sizeof(msg)) > 0 && type == MSG_SYSTEM) 
+    if(protocol_recv_msg(fd, g_recv_buf, &g_recv_len, &type, msg, sizeof(msg)) > 0 && type == MSG_SYSTEM) 
     {
         printf("%s\n", msg);
     }
 
     fd_set readfds;
     
-    while(1)
+    while(running)
     {
         FD_ZERO(&readfds);
         FD_SET(0, &readfds);       // 0 = stdin
@@ -121,6 +120,7 @@ int main(int argc, char *argv[])
         if(select(fd + 1, &readfds, NULL, NULL, NULL) < 0)
         {
             perror("select");
+            running = 0;
             break;
         }
 
@@ -132,6 +132,7 @@ int main(int argc, char *argv[])
                     printf("[诊断] [%s] 已发送%d条后 stdin EOF\n", mynick, sent_count);
                 else
                     printf("[诊断] [%s] stdin 错误: %s\n", mynick, strerror(errno));
+                running = 0;
                 break;
             }
             int len = strlen(buf);
@@ -143,31 +144,42 @@ int main(int argc, char *argv[])
             if(strcmp(buf, "quit") == 0)
             {
                 protocol_send_msg(fd, MSG_QUIT, "quit");
+                running = 0;
                 break;
             }
             // 发送消息
             if(protocol_send_msg(fd, MSG_TEXT, buf) < 0)
             {
                 printf("[诊断] [%s] 第%d条发送失败: %s\n", mynick, sent_count + 1, strerror(errno));
+                running = 0;
                 break;
             }
             sent_count++;
         }
         else if(FD_ISSET(fd, &readfds))
         {
-            int ret = protocol_recv_msg(fd, &type, msg, sizeof(msg));
-            if(ret == 0) 
+            while(1)
             {
-                printf("server close.\n");
-                break;
+                int ret = protocol_recv_msg(fd, g_recv_buf, &g_recv_len, &type, msg, sizeof(msg));
+                if(ret == 0) 
+                {
+                    printf("server close.\n");
+                    running = 0;
+                    break;
+                }
+                if(ret == PROTOCOL_ERR_WOULDBLOCK)
+                {
+                    break;
+                }
+                else if(ret < 0)
+                {
+                    perror("recv");
+                    running = 0;
+                    break;
+                }
+                printf("%s\n", msg);
+                fflush(stdout);
             }
-            else if(ret < 0)
-            {
-                perror("recv");
-                break;
-            }
-            printf("%s\n", msg);
-            fflush(stdout);
         }
     }
 

@@ -15,7 +15,9 @@
 typedef struct {
     int fd;
     char nickname[MAX_NICK_LEN];    
-    int has_nickname;               
+    int has_nickname;   
+    char recv_buf[PROTOCOL_BUF_SIZE];            
+    int recv_buf_len;
 } client_info_t;
 
 int client_manager_init(int fd); // 初始化客户端管理器
@@ -26,5 +28,6 @@ void client_set_nickname(int fd, const char *nick); // 设置客户端昵称
 void client_check_alive(void); // 巡检：清理 fd 已死但记录未删的僵尸客户端
 int client_snapshot_fds(int *out, int max, int exclude_fd); // 获取所有在线客户端 fd（排除 exclude_fd）
 int client_get_nickname(int fd, char *name, int namesize);
+int client_get_recv_buf(int fd, char **buf, int **len);
 
 #endif

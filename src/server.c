@@ -116,39 +116,46 @@ int main(void)
             }
             else
             {
+                char *buf;
+                int *len;
                 uint8_t type;
                 char msg[PROTOCOL_MAX_BODY_SIZE + 1];
-                int ret = protocol_recv_msg(events[i].data.fd, &type, msg, sizeof(msg));
-                if(ret == PROTOCOL_ERR_WOULDBLOCK)
+                if(client_get_recv_buf(events[i].data.fd, &buf, &len) < 0) continue;
+                while(1)
                 {
-                    continue;   // 暂时没数据，连接还活着，下轮再来
-                }
-                if(ret == PROTOCOL_ERR_MAGIC || ret == PROTOCOL_ERR_CHECKSUM)
-                {
-                    printf("协议流错位！fd=%d err=%d\n", events[i].data.fd, ret);
-                    client_remove(events[i].data.fd);
-                    continue;   // 错位后无法恢复，断开
-                }
-                if(ret <= 0)
-                {
-                    client_remove(events[i].data.fd);
-                    continue;
-                }
-                if(type == MSG_TEXT)
-                {
-                    printf("recv [fd=%d]: type = %s, msg = %s\n", events[i].data.fd, protocol_type_str(type), msg);
-                    if(threadpool_submit(tp, events[i].data.fd, type, msg, ret) < 0)
+                    int ret = protocol_recv_msg(events[i].data.fd, buf, len, &type, msg, sizeof(msg));
+                    if(ret == PROTOCOL_ERR_WOULDBLOCK)
                     {
-                        printf("[诊断] 入队失败 fd=%d\n", events[i].data.fd);
+                        break;   // 暂时没数据，连接还活着，下轮再来
                     }
-                }
-                else if(type == MSG_QUIT)
-                {
-                    client_remove(events[i].data.fd);
-                }
-                else if(type == MSG_NICKNAME)
-                {
-                    client_set_nickname(events[i].data.fd, msg);
+                    if(ret == PROTOCOL_ERR_MAGIC || ret == PROTOCOL_ERR_CHECKSUM)
+                    {
+                        printf("协议流错位！fd=%d err=%d\n", events[i].data.fd, ret);
+                        client_remove(events[i].data.fd);
+                        break;   // 错位后无法恢复，断开
+                    }
+                    if(ret <= 0)
+                    {
+                        client_remove(events[i].data.fd);
+                        break;
+                    }
+                    if(type == MSG_TEXT)
+                    {
+                        printf("recv [fd=%d]: type = %s, msg = %s\n", events[i].data.fd, protocol_type_str(type), msg);
+                        if(threadpool_submit(tp, events[i].data.fd, type, msg, ret) < 0)
+                        {
+                            printf("[诊断] 入队失败 fd=%d\n", events[i].data.fd);
+                        }
+                    }
+                    else if(type == MSG_QUIT)
+                    {
+                        client_remove(events[i].data.fd);
+                        break;
+                    }
+                    else if(type == MSG_NICKNAME)
+                    {
+                        client_set_nickname(events[i].data.fd, msg);
+                    }
                 }
             }
         }

@@ -18,3 +18,4 @@ obj/
 # 测试日志
 server.log
 run.log
+.trae/rules/git-commit-message.md

@@ -31,15 +31,14 @@
 #define PROTOCOL_ERR_MAGIC      -6
 #define PROTOCOL_ERR_CHECKSUM   -7
 #define PROTOCOL_ERR_BUFSIZE    -8
-#define PROTOCOL_ERR_WOULDBLOCK -10  /* 非阻塞 fd：暂时无数据，连接仍正常 */
+#define PROTOCOL_ERR_WOULDBLOCK -10  /* 暂无完整帧，等待更多数据 */
 
 
 /* 函数声明 */
 int protocol_pack(uint8_t type, const char *msg, uint8_t *buf, int buf_len);
 int protocol_unpack(const uint8_t *buf, int buf_len, uint8_t *type, char *msg, int msg_len);
-int read_exact(int fd, void *buf, int n);
 int write_exact(int fd, const void *buf, int n);
-int protocol_recv_msg(int fd, uint8_t *type, char *msg, int msg_len);
+int protocol_recv_msg(int fd, char *recv_buf, int *recv_len, uint8_t *type, char *msg, int msg_len);
 int protocol_send_msg(int fd, uint8_t type, const char *msg);
 const char* protocol_type_str(uint8_t type);
 
