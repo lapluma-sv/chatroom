@@ -15,7 +15,11 @@ int read_exact(int fd, void *buf, int n)
             {
                 return PROTOCOL_ERR_WOULDBLOCK;
             }
-            return -1;  // 出错或被信号打断，直接返回
+            else if(errno == EINTR)
+            {
+                continue;
+            }
+            return -1;  //出错
         }
         if(ret == 0) return 0;
         received += ret;
@@ -32,6 +36,10 @@ int write_exact(int fd, const void *buf, int n)
         int ret = send(fd, (const char*)buf + sent, n - sent, 0);
         if(ret == -1)
         {
+            if(errno == EINTR)
+            {
+                continue;
+            }
             return -1;  // 出错或被信号打断，直接返回
         }
         sent += ret;
@@ -149,6 +157,10 @@ int protocol_recv_msg(int fd, uint8_t *type, char *msg, int msg_len)
 
     // 2. 从包头里读出正文长度
     int body_len = ntohl(*(uint32_t*)(header + 3));
+    if(body_len > PROTOCOL_MAX_BODY_SIZE)
+    {
+        return PROTOCOL_ERR_MSGSIZE;
+    }
     int total_len = PROTOCOL_HEADER_SIZE + body_len + PROTOCOL_TAIL_SIZE;
 
     // 3. 分配足够空间装整个包
